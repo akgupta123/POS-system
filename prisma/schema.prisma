@@ -1,0 +1,142 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  MANAGER
+  CASHIER
+}
+
+enum SaleStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum PaymentStatus {
+  SUCCESS
+  FAILED
+}
+
+model Merchant {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  createdAt DateTime  @default(now())
+  stores    Store[]
+  users     User[]
+  products  Product[]
+}
+
+model Store {
+  id         String      @id @default(uuid()) @db.Uuid
+  merchantId String      @db.Uuid
+  name       String
+  createdAt  DateTime    @default(now())
+  merchant   Merchant    @relation(fields: [merchantId], references: [id])
+  users      User[]
+  inventory  Inventory[]
+  sales      Sale[]
+
+  @@unique([merchantId, name])
+  @@index([merchantId])
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  merchantId   String   @db.Uuid
+  storeId      String?  @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         Role
+  createdAt    DateTime @default(now())
+  merchant     Merchant @relation(fields: [merchantId], references: [id])
+  store        Store?   @relation(fields: [storeId], references: [id])
+  sales        Sale[]
+
+  @@index([merchantId])
+  @@index([storeId])
+}
+
+model Product {
+  id         String      @id @default(uuid()) @db.Uuid
+  merchantId String      @db.Uuid
+  sku        String
+  name       String
+  priceCents Int
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  merchant   Merchant    @relation(fields: [merchantId], references: [id])
+  inventory  Inventory[]
+  saleItems  SaleItem[]
+
+  @@unique([merchantId, sku])
+  @@index([merchantId])
+}
+
+model Inventory {
+  id        String   @id @default(uuid()) @db.Uuid
+  storeId   String   @db.Uuid
+  productId String   @db.Uuid
+  quantity  Int      @default(0)
+  updatedAt DateTime @updatedAt
+  store     Store    @relation(fields: [storeId], references: [id])
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([storeId, productId])
+  @@index([productId])
+}
+
+model Sale {
+  id             String     @id @default(uuid()) @db.Uuid
+  merchantId     String     @db.Uuid
+  storeId        String     @db.Uuid
+  userId         String     @db.Uuid
+  idempotencyKey String
+  requestHash    String
+  status         SaleStatus @default(PENDING)
+  totalCents     Int        @default(0)
+  createdAt      DateTime   @default(now())
+  store          Store      @relation(fields: [storeId], references: [id])
+  user           User       @relation(fields: [userId], references: [id])
+  items          SaleItem[]
+  payment        Payment?
+
+  @@unique([storeId, idempotencyKey])
+  @@index([storeId, createdAt])
+  @@index([merchantId])
+  @@index([userId])
+}
+
+model SaleItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  saleId         String  @db.Uuid
+  productId      String  @db.Uuid
+  quantity       Int
+  unitPriceCents Int
+  lineTotalCents Int
+  sale           Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product        Product @relation(fields: [productId], references: [id])
+
+  @@index([saleId])
+  @@index([productId])
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  saleId            String        @unique @db.Uuid
+  provider          String
+  status            PaymentStatus
+  amountCents       Int
+  providerReference String?
+  failureReason     String?
+  createdAt         DateTime      @default(now())
+  sale              Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+}
